@@ -1,7 +1,7 @@
 """
 Data loading and cohort assembly module.
-Handles multi-modal data ingestion (clinical, peak, species, genus, phylum),
-cohort alignment across modalities, and resolution of orphaned matched groups.
+Handles multi-modal data ingestion (clinical, peak, species, genus, phylum)
+and cohort alignment across modalities.
 """
 
 from typing import Dict, List, Optional, Tuple, Union
@@ -25,8 +25,7 @@ class SepsisDataLoader:
         label_name: str = "LOS",
     ) -> pd.DataFrame:
         """
-        Load raw clinical data without premature global imputation.
-        Maintains columns for split-aware preprocessing.
+        Load raw clinical data and Maintains columns for split-aware preprocessing.
         """
         meta_path = self.config.get_metadata_path()
         cols = list(self.config.clinical_cols) + ["Pt_ID", "Match_group", "Variable_3"]
@@ -134,10 +133,9 @@ class SepsisDataLoader:
         self,
         pathogens: Optional[List[str]] = None,
         label_name: str = "LOS",
-    ) -> Tuple[Dict[str, pd.DataFrame], pd.Series]:
+    ) -> Dict[str, pd.DataFrame]:
         """
-        Load clinical and all 4 microbiome modalities, align across shared patients,
-        and remove orphaned matched groups to ensure data integrity.
+        Load clinical and all 4 microbiome modalities, and align across shared patients.
         """
         if pathogens is None:
             pathogens = self.config.all_pathogens
@@ -147,7 +145,7 @@ class SepsisDataLoader:
         for source_name in self.config.microbiome_files.keys():
             microbiome_dfs[source_name] = self.load_microbiome(source_name, pathogens, label_name=label_name)
 
-        # 1. Identify shared patients across all 5 modalities
+        # Identify shared patients across all 5 modalities
         shared_pt_ids = set(df_clinical["Pt_ID"])
         for m_df in microbiome_dfs.values():
             shared_pt_ids = shared_pt_ids & set(m_df["Pt_ID"])
@@ -157,19 +155,7 @@ class SepsisDataLoader:
         for s in microbiome_dfs:
             microbiome_dfs[s] = microbiome_dfs[s][microbiome_dfs[s]["Pt_ID"].isin(shared_pt_ids)].copy()
 
-        # 2. Fix Orphaned Matched Groups:
-        # Verify each Match_group has both >=1 case (label_name == 1) and >=1 control (label_name == 0)
-        group_counts = df_clinical.groupby("Match_group")[label_name].agg(
-            cases=lambda y: (y == 1).sum(),
-            controls=lambda y: (y == 0).sum()
-        )
-        valid_groups = group_counts[(group_counts["cases"] >= 1) & (group_counts["controls"] >= 1)].index.tolist()
-
-        df_clinical = df_clinical[df_clinical["Match_group"].isin(valid_groups)].copy()
-        for s in microbiome_dfs:
-            microbiome_dfs[s] = microbiome_dfs[s][microbiome_dfs[s]["Match_group"].isin(valid_groups)].copy()
-
-        # 3. Sort each source by Pt_ID to guarantee aligned row ordering
+        # Sort each source by Pt_ID to guarantee aligned row ordering
         df_clinical = df_clinical.sort_values("Pt_ID").reset_index(drop=True)
         aligned_sources = {"clinical": df_clinical}
         for s, m_df in microbiome_dfs.items():

@@ -34,10 +34,12 @@ class PipelineConfig:
         "Escherichia coli",
         "Serratia marcecens",
         "Staphylococcus aureus",
+        "Bacillus species",
         "Bacillus cereus",
         "Enterococcus faecalis",
         "Group B streptococcus",
         "Pantoea septica",
+        "Proteus mirabilis",
         "Pseudomonas spp.",
     ])
 
@@ -87,7 +89,7 @@ class PipelineConfig:
     ])
 
     # Cross-validation & sampling settings
-    random_seed: int = 22
+    random_seed: int = 33
     n_splits_outer: int = 5
     n_splits_inner: int = 3
     bayes_iter: int = 30

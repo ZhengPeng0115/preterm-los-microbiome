@@ -5,7 +5,7 @@ Implements:
   (b) Full cohort test including all controls (excluding other sepsis)
   (c) Full cohort test including all controls and other sepsis
 All experiments output pooled held-out test metrics with 100-run bootstrap 95% CIs
-and publication-ready SHAP beeswarm summary plots for feature importance.
+and publication-ready SHAP beeswarm summary plots for feature importance in Experiment (a).
 """
 
 from typing import Dict, List, Optional, Tuple, Union
@@ -129,7 +129,8 @@ def run_case_control_study(
     Experiment (a): Case-control (1:3) cross-validation study.
     Evaluates clinical and microbiome modalities (+ multimodal combination).
     Selects the 'Best Source' for each pathogen and overall LOS based on pooled CV AUC.
-    Computes pooled held-out metrics with 100-run bootstrap 95% CIs and SHAP beeswarm plots.
+    Computes pooled held-out metrics with 100-run bootstrap 95% CIs and SHAP beeswarm plots
+    for each target and data source.
 
     Returns:
     --------
@@ -239,7 +240,7 @@ def run_case_control_study(
                 modality_predictions[src_name]["proba"].extend(proba_te)
                 modality_predictions[src_name]["y_true"].extend(y_te)
 
-                # Record SHAP explanation on test fold
+                # Compute SHAP explanations for this source on held-out fold
                 if cfg.plot_shap_beeswarm:
                     try:
                         explainer = shap.TreeExplainer(model)
@@ -251,9 +252,13 @@ def run_case_control_study(
                     except Exception:
                         pass
 
-            # Multimodal combination
-            comb_tr = np.column_stack([prepared_sources[s][0][:, selected_features[s]] for s in sources_data.keys()])
-            comb_te = np.column_stack([prepared_sources[s][1][:, selected_features[s]] for s in sources_data.keys()])
+            # Multimodal combination: concatenate selected features from all modalities
+            comb_tr = np.column_stack([
+                prepared_sources[s][0][:, selected_features[s]] for s in sources_data.keys()
+            ])
+            comb_te = np.column_stack([
+                prepared_sources[s][1][:, selected_features[s]] for s in sources_data.keys()
+            ])
             comb_feat_names = np.concatenate([
                 np.array(prepared_sources[s][2])[selected_features[s]] for s in sources_data.keys()
             ])
@@ -281,8 +286,8 @@ def run_case_control_study(
                 config=cfg,
                 random_state=fold_seed,
             )
-            proba_comb = model_comb.predict_proba(comb_te[:, col_sel_comb])[:, 1]
-            modality_predictions["multimodal_comb"]["proba"].extend(proba_comb)
+            proba_te_comb = model_comb.predict_proba(comb_te[:, col_sel_comb])[:, 1]
+            modality_predictions["multimodal_comb"]["proba"].extend(proba_te_comb)
             modality_predictions["multimodal_comb"]["y_true"].extend(y_te)
 
             if cfg.plot_shap_beeswarm:
@@ -296,19 +301,15 @@ def run_case_control_study(
                 except Exception:
                     pass
 
-        # Evaluate pooled bootstrap metrics for each modality
+        # Evaluate all modalities for this target
         target_results = {}
-        best_src = None
         best_auc = -1.0
+        best_src = None
 
         for src_name, preds in modality_predictions.items():
             y_true_arr = np.array(preds["y_true"], dtype=int)
             prob_arr = np.array(preds["proba"], dtype=float)
 
-            if len(np.unique(y_true_arr)) < 2:
-                continue
-
-            # Optimize threshold on pooled held-out predictions
             thresh, _ = select_threshold_max_spec_slope(y_true_arr, prob_arr)
             ci_metrics = bootstrap_pooled_metrics(
                 y_true=y_true_arr,
@@ -318,6 +319,7 @@ def run_case_control_study(
                 ci_level=cfg.ci_level,
                 random_state=cfg.random_seed,
             )
+
             target_results[src_name] = {
                 "threshold": thresh,
                 "metrics_ci": ci_metrics,
@@ -334,31 +336,45 @@ def run_case_control_study(
         study_results[target] = target_results
         print(f" -> Best source for {target_display}: {best_sources[target]} (AUC: {best_auc:.3f})")
 
-        # Generate and save SHAP Beeswarm summary plot for best source
-        chosen_src = best_sources[target]
-        if cfg.plot_shap_beeswarm and chosen_src in modality_shap and len(modality_shap[chosen_src]["vals"]) > 0:
-            try:
-                aligned_exp = build_union_and_align_shap(
-                    shap_values_list=modality_shap[chosen_src]["vals"],
-                    shap_base_list=modality_shap[chosen_src]["base"],
-                    shap_data_list=modality_shap[chosen_src]["data"],
-                    shap_featnames_list=modality_shap[chosen_src]["feats"],
-                )
-                target_results[chosen_src]["shap_explanation"] = aligned_exp
+        # Generate and save SHAP Beeswarm summary plots for each evaluated source (not only the best source)
+        if cfg.plot_shap_beeswarm:
+            target_slug = "overall" if target == "overall" else target.strip()
+            chosen_src = best_sources[target]
+            for src_name, shap_data in modality_shap.items():
+                if len(shap_data["vals"]) > 0:
+                    try:
+                        aligned_exp = build_union_and_align_shap(
+                            shap_values_list=shap_data["vals"],
+                            shap_base_list=shap_data["base"],
+                            shap_data_list=shap_data["data"],
+                            shap_featnames_list=shap_data["feats"],
+                        )
+                        if src_name in target_results:
+                            target_results[src_name]["shap_explanation"] = aligned_exp
 
-                target_slug = "overall" if target == "overall" else target.strip()
-                save_path = f"{cfg.figures_dir}/exp_a_{target_slug}_shap_beeswarm.pdf"
-                title = f"SHAP Feature Importance (Beeswarm) - {target_display}\nExperiment (a) Case-Control [Source: {chosen_src}]"
-                plot_shap_beeswarm(
-                    explanation=aligned_exp,
-                    title=title,
-                    save_path=save_path,
-                    max_display=cfg.shap_beeswarm_max_display,
-                )
-                target_results[chosen_src]["shap_plot_path"] = save_path
-                print(f" -> Saved SHAP beeswarm plot: {save_path}")
-            except Exception as e:
-                print(f" -> [Warning] Could not generate SHAP beeswarm for {target_display}: {e}")
+                        save_path = f"{cfg.figures_dir}/exp_a_{target_slug}_{src_name}_shap_beeswarm.pdf"
+                        title = f"SHAP Feature Importance (Beeswarm) - {target_display}\nExperiment (a) Case-Control [Source: {src_name}]"
+                        plot_shap_beeswarm(
+                            explanation=aligned_exp,
+                            title=title,
+                            save_path=save_path,
+                            max_display=cfg.shap_beeswarm_max_display,
+                        )
+                        if src_name in target_results:
+                            target_results[src_name]["shap_plot_path"] = save_path
+                        print(f" -> Saved SHAP beeswarm plot: {save_path}")
+
+                        # Also save unadorned filename for best source for backward compatibility
+                        if src_name == chosen_src:
+                            best_save_path = f"{cfg.figures_dir}/exp_a_{target_slug}_shap_beeswarm.pdf"
+                            plot_shap_beeswarm(
+                                explanation=aligned_exp,
+                                title=title,
+                                save_path=best_save_path,
+                                max_display=cfg.shap_beeswarm_max_display,
+                            )
+                    except Exception as e:
+                        print(f" -> [Warning] Could not generate SHAP beeswarm for {target_display} [{src_name}]: {e}")
 
     return best_sources, study_results
 
@@ -371,13 +387,11 @@ def run_full_cohort_study(
     config: Optional[PipelineConfig] = None,
 ) -> Dict[str, Dict]:
     """
-    Experiments (b) & (c): Full cohort test.
-    (b) include_other_sepsis = False -> Test on full cohort all controls (excluding other sepsis).
-    (c) include_other_sepsis = True  -> Test on full cohort including all controls AND other sepsis.
-    Uses the Best Source dynamically identified in Experiment (a) for each pathogen.
-    Uses target-aware outer CV to ensure balanced representation of rare pathogen cases across folds.
-    Optimizes threshold on the test set and calculates pooled bootstrap 95% CIs (100 runs).
-    Saves publication-quality SHAP beeswarm summary plots for each pathogen model.
+    Run full cohort evaluation for target pathogens.
+    Trains on target pathogen cases vs matched controls (1:3).
+    Evaluates on:
+      - (b) All controls (excluding other sepsis) if include_other_sepsis is False.
+      - (c) All controls + other sepsis if include_other_sepsis is True.
     """
     cfg = config or PipelineConfig()
     if pathogens is None:
@@ -393,10 +407,6 @@ def run_full_cohort_study(
 
     pathogen_predictions = {
         p: {"true_labels": [], "probabilities": [], "pt_ids": [], "pna": []}
-        for p in pathogens
-    }
-    pathogen_shap = {
-        p: {"vals": [], "base": [], "data": [], "feats": []}
         for p in pathogens
     }
 
@@ -487,18 +497,6 @@ def run_full_cohort_study(
             )
 
             proba_test = model.predict_proba(X_te_sel)[:, 1]
-
-            # Compute and record SHAP explanation on outer test split
-            if cfg.plot_shap_beeswarm:
-                try:
-                    explainer = shap.TreeExplainer(model)
-                    shap_exp = explainer(X_te_sel)
-                    pathogen_shap[target_pathogen]["vals"].append(shap_exp.values)
-                    pathogen_shap[target_pathogen]["base"].append(shap_exp.base_values)
-                    pathogen_shap[target_pathogen]["data"].append(shap_exp.data)
-                    pathogen_shap[target_pathogen]["feats"].append(list(np.array(feat_names_selected)[col_sel]))
-                except Exception:
-                    pass
 
             # Assign true multi-class labels for evaluation:
             # 0: Target pathogen
@@ -600,28 +598,6 @@ def run_full_cohort_study(
             save_path=f"{figures_prefix}_confusion_matrix.pdf",
             include_other_sepsis=include_other_sepsis,
         )
-
-        # Generate and save SHAP Beeswarm summary plot for full cohort experiment
-        if cfg.plot_shap_beeswarm and p in pathogen_shap and len(pathogen_shap[p]["vals"]) > 0:
-            try:
-                aligned_exp = build_union_and_align_shap(
-                    shap_values_list=pathogen_shap[p]["vals"],
-                    shap_base_list=pathogen_shap[p]["base"],
-                    shap_data_list=pathogen_shap[p]["data"],
-                    shap_featnames_list=pathogen_shap[p]["feats"],
-                )
-                exp_letter = "c" if include_other_sepsis else "b"
-                shap_save_path = f"{figures_prefix}_shap_beeswarm.pdf"
-                shap_title = f"SHAP Feature Importance (Beeswarm) - {p_name_clean}\nExperiment ({exp_letter}) Full Cohort [Source: {best_sources.get(p, 'clinical')}]"
-                plot_shap_beeswarm(
-                    explanation=aligned_exp,
-                    title=shap_title,
-                    save_path=shap_save_path,
-                    max_display=cfg.shap_beeswarm_max_display,
-                )
-                print(f"  SHAP beeswarm: {shap_save_path}")
-            except Exception as e:
-                print(f"  [Warning] Could not generate SHAP beeswarm for {p_name_clean}: {e}")
 
         experiment_results[p] = {
             "source_used": best_sources.get(p, "clinical"),

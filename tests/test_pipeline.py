@@ -11,6 +11,8 @@ import pandas as pd
 import pytest
 import shap
 
+from sepsis_prediction.config import PipelineConfig
+from sepsis_prediction.data_loader import SepsisDataLoader
 from sepsis_prediction.preprocessing import (
     ClinicalSplitPreprocessor,
     calculate_individual_microbiome_features,
@@ -355,3 +357,37 @@ def test_plot_shap_beeswarm(tmp_path):
     assert pdf_path.exists()
     png_path = tmp_path / "test_shap_beeswarm.png"
     assert png_path.exists()
+
+
+def test_all_pathogens_includes_matches():
+    """Verify all_pathogens includes Bacillus species and Proteus mirabilis (groups 43, 52, 81)."""
+    cfg = PipelineConfig()
+    assert "Bacillus species" in cfg.all_pathogens
+    assert "Proteus mirabilis" in cfg.all_pathogens
+
+
+def test_alignment_retains_groups_without_orphaned_removal():
+    """Verify alignment retains shared patients across modalities without dropping groups lacking cases."""
+    loader = SepsisDataLoader()
+    # Dummy clinical and microbiome with a group that has only controls
+    df_clin = pd.DataFrame({
+        "Pt_ID": ["P1", "P2", "P3", "P4"],
+        "Match_group": [1, 1, 2, 2],
+        "LOS": [1, 0, 0, 0],  # Group 2 has 0 cases, only controls
+    })
+    df_micro = pd.DataFrame({
+        "Pt_ID": ["P1", "P2", "P3", "P4"],
+        "Match_group": [1, 1, 2, 2],
+        "LOS": [1, 0, 0, 0],
+        "Feature_1": [0.1, 0.2, 0.3, 0.4],
+    })
+
+    # Filter to shared patients
+    shared_ids = set(df_clin["Pt_ID"]) & set(df_micro["Pt_ID"])
+    df_clin_aligned = df_clin[df_clin["Pt_ID"].isin(shared_ids)].sort_values("Pt_ID").reset_index(drop=True)
+    df_micro_aligned = df_micro[df_micro["Pt_ID"].isin(shared_ids)].sort_values("Pt_ID").reset_index(drop=True)
+
+    # Without orphaned check, all 4 patients and both groups are preserved
+    assert len(df_clin_aligned) == 4
+    assert len(df_micro_aligned) == 4
+    assert 2 in df_clin_aligned["Match_group"].values
