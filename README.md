@@ -34,11 +34,11 @@ The pipeline integrates clinical metadata with longitudinal microbiome profiling
 
 | Modality / File | Source Path | Description |
 |---|---|---|
-| **Clinical Metadata** | `Metadata_sepsis_prediction_23102025.xlsx` | Patient-level characteristics (`Hospital_site`, `GA_total`, `Birthweight`, `Apgar_scores`, `AB_exposure`) and sample timing (`Day_of_sampling`, `Day_before_sepsis`, `Match_group`). |
-| **Microbiome Peaks** | `4. peaks_AA_sepsis prediction.csv` | Mass-spectrometry MALDI-TOF peak abundances. |
-| **Microbiome Species** | `3. species_AA_sepsis prediction.csv` | Species-level relative taxonomic abundances. |
-| **Microbiome Genus** | `2. genus_AA_sepsis prediction.csv` | Genus-level aggregated taxonomic abundances. |
-| **Microbiome Phylum** | `phylum_AA_sepsis prediction.csv` | Phylum-level broad taxonomic composition. |
+| **Clinical Metadata** | `Metadata.xlsx` | Patient-level characteristics (`Hospital_site`, `GA_total`, `Birthweight`, `Apgar_scores`, `AB_exposure`) and sample timing (`Day_of_sampling`, `Day_before_sepsis`, `Match_group`). |
+| **Microbiome Peaks** | `peaks_AA.csv` | Mass-spectrometry MALDI-TOF peak abundances. |
+| **Microbiome Species** | `species_AA.csv` | Species-level relative taxonomic abundances. |
+| **Microbiome Genus** | `genus_AA.csv` | Genus-level aggregated taxonomic abundances. |
+| **Microbiome Phylum** | `phylum_AA.csv` | Phylum-level broad taxonomic composition. |
 
 ### Data Processing & Feature Engineering
 1. **Multi-Modal Patient Alignment**: Retains the intersection of patients present across all five sources (289 infants across 75 matched case-control groups).
@@ -71,11 +71,11 @@ The framework implements three unified experimental protocols:
 * Dynamically identifies the **Best Source** for each pathogen target and for overall sepsis (LOS) based on held-out test AUC.
 
 ### (b) Full Cohort Test (All Controls)
-* Trains on target pathogen cases vs. matched controls (1:3) and evaluates across all 214 cohort controls (excluding other sepsis cases).
+* Trains on target pathogen cases vs. matched controls (1:3) and evaluates across all cohort controls (excluding other sepsis cases).
 * Evaluates whether the identified Best Source generalizes beyond matched infants to the broad NICU control population.
 
 ### (c) Full Cohort Test (All Controls + Other Sepsis)
-* Evaluates target pathogen cases against the entire cohort: all 214 controls plus all infants with other sepsis types (~289 total infants).
+* Evaluates target pathogen cases against the entire cohort: all controls plus all infants with other sepsis types.
 * Assesses the pathogen-specificity of the model against confounding non-target infections.
 
 ### Key Methodological Safeguards
@@ -111,11 +111,6 @@ All output tables and figures are automatically written to `figures/`:
 ## 5. Execution Guide
 
 ### Prerequisites & Environment Setup
-Activate the project's Conda environment:
-```bash
-conda activate Sepsis
-cd C:\Projects\Rimke\Code
-```
 
 ### 1. Quick Verification Run (Fast Testing)
 Executes reduced iterations (3 Bayes iterations, 3 CV folds, 10 bootstrap runs) to quickly verify pipeline integrity:
