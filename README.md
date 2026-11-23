@@ -41,7 +41,7 @@ The pipeline integrates clinical metadata with longitudinal microbiome profiling
 | **Microbiome Phylum** | `phylum_AA.csv` | Phylum-level broad taxonomic composition. |
 
 ### Data Processing & Feature Engineering
-1. **Multi-Modal Patient Alignment**: Retains the intersection of patients present across all five sources (304 infants across 79 matched case-control groups).
+1. **Multi-Modal Patient Alignment**: Retains the intersection of patients present across all five sources.
 2. **Compositional Transformation**: Applies total-sum scaling (closure) and zero replacement (`multi_replace`) followed by Centered Log-Ratio (`clr`) transformation.
 3. **Longitudinal Aggregation**: Aggregates longitudinal stool samples for each infant into temporal trajectory features: `mean`, `max`, `last` sample before sepsis, and linear `slope` (protected against zero-variance sampling days).
 4. **Microbial Diversity**: Computes longitudinal alpha diversity metrics including Shannon diversity ($H$) and Dominance ($D$).
