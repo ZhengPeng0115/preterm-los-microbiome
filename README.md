@@ -9,7 +9,7 @@ A modular, leak-free machine learning framework for predicting **Late-Onset Seps
 The codebase is organized into a modular package (`sepsis_prediction`), a top-level CLI execution script (`run_pipeline.py`), and an automated test suite:
 
 ```
-C:\Projects\Rimke\Code\
+.
 ├── sepsis_prediction/               # Core pipeline package
 │   ├── __init__.py                  # Public API exports
 │   ├── config.py                    # Pipeline settings, search spaces, and file paths
@@ -23,7 +23,7 @@ C:\Projects\Rimke\Code\
 │
 ├── run_pipeline.py                  # Primary CLI script for running single or multiple experiments
 └── tests/
-    └── test_pipeline.py             # Comprehensive pytest test suite (13 unit tests)
+    └── test_pipeline.py             # Comprehensive pytest test suite
 ```
 
 ---
@@ -54,7 +54,7 @@ The pipeline integrates clinical metadata with longitudinal microbiome profiling
 The framework implements three unified experimental protocols:
 
 ```
-                            [304 Aligned Infants]
+                       [Multi-Modal Aligned Cohort]
                                       │
         ┌─────────────────────────────┼─────────────────────────────┐
         ▼                             ▼                             ▼
@@ -62,8 +62,8 @@ The framework implements three unified experimental protocols:
      5-Fold CV Search             (Target vs All Controls)      (Target vs Controls + Other Sepsis)
   • Clinical                   • Dynamic Best Source from (a) • Dynamic Best Source from (a)
   • Peaks / Species / Genus    • Target-Aware Outer CV splits • Target-Aware Outer CV splits
-  • Phylum / Multimodal Comb   └─► Tests generalizability     └─► Tests pathogen specificity
-  └─► Discovers "Best Source"      
+  • Phylum / Multimodal Comb   • All Cohort Controls          • Controls + Other Sepsis
+  └─► Discovers "Best Source"  └─► Tests generalizability     └─► Tests pathogen specificity
 ```
 
 ### (a) Case-Control Study (1:3 Matched Cohort)
@@ -96,9 +96,11 @@ All output tables and figures are automatically written to `figures/`:
   - Each specific pathogen across Experiments (a), (b), and (c)
 
 ### B. Visualization Figures (Exported as vector `.pdf` and companion `.png`)
-* **SHAP Beeswarm Summary Plots** (Exclusively generated for Experiment (a) Case-Control):
-  - `exp_a_overall_<source>_shap_beeswarm.pdf` / `.png`: Feature impact and directionality across sources for overall sepsis.
-  - `exp_a_<pathogen>_<source>_shap_beeswarm.pdf` / `.png`: Case-control feature importance across sources for each pathogen target.
+* **SHAP Beeswarm Summary Plots**:
+  - `exp_a_overall_shap_beeswarm.pdf` / `.png`: Feature impact and directionality for overall sepsis.
+  - `exp_a_<pathogen>_shap_beeswarm.pdf` / `.png`: Case-control feature importance for each pathogen.
+  - `exp_b_<pathogen>_shap_beeswarm.pdf` / `.png`: Full cohort (all controls) feature importance.
+  - `exp_c_<pathogen>_shap_beeswarm.pdf` / `.png`: Full cohort (controls + other sepsis) feature importance.
 * **Performance Curves**: `exp_{b,c}_<pathogen>_performance_curves.pdf` (Sensitivity, Specificity, PPV, NPV vs threshold).
 * **ROC Curves**: `exp_{b,c}_<pathogen>_roc_curve.pdf` (ROC curves with bootstrap 95% CI AUC in legend).
 * **Probability Distributions**: `exp_{b,c}_<pathogen>_prob_distribution.pdf` (Violin plots with individual jitter and quartile markers).

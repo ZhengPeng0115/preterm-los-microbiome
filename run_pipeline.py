@@ -5,7 +5,7 @@ Executes and compares:
   (b) Full cohort test on all controls
   (c) Full cohort test on all controls + other sepsis
 All evaluations report pooled held-out metrics with 100-run bootstrap 95% CIs
-and generate SHAP beeswarm summary plots for overall sepsis and pathogen models in Experiment (a).
+and generate SHAP beeswarm summary plots for overall sepsis and pathogen models.
 """
 
 import argparse
@@ -253,7 +253,11 @@ def main():
         print("=" * 80)
         print("Feature importance beeswarm plots saved with companion PNG and PDF copies in 'figures/':")
         if "a" in selected_exps:
-            print("  - Exp (a) Case-Control: figures/exp_a_<target>_<source>_shap_beeswarm.pdf (.png)")
+            print("  - Exp (a) Case-Control: figures/exp_a_<target>_shap_beeswarm.pdf (.png)")
+        if "b" in selected_exps:
+            print("  - Exp (b) Full Cohort:  figures/exp_b_<pathogen>_shap_beeswarm.pdf (.png)")
+        if "c" in selected_exps:
+            print("  - Exp (c) Full Cohort:  figures/exp_c_<pathogen>_shap_beeswarm.pdf (.png)")
 
 
 if __name__ == "__main__":

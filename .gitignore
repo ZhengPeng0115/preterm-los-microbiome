@@ -38,8 +38,7 @@ data/
 raw_data/
 
 # Output figures & results (kept locally; withheld from remote repository prior to publication)
-figures/*
-!figures/.gitkeep
+figures/
 
 # OS generated files
 .DS_Store
