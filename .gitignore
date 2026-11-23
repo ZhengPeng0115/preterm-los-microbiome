@@ -1,0 +1,42 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE configurations
+.idea/
+.vscode/
+.agents/
+.gemini/
+*.sublime-project
+*.sublime-workspace
+
+# Testing & Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Python environments
+venv/
+env/
+.venv/
+ENV/
+
+# Data files (Strict privacy protection: no raw clinical or microbiome datasets)
+*.xlsx
+*.xls
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.h5
+*.pkl
+*.pickle
+*.docx
+*.doc
+data/
+raw_data/
+
+# OS generated files
+.DS_Store
+Thumbs.db
