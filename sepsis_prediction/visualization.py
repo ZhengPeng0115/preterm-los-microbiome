@@ -452,7 +452,12 @@ def plot_shap_beeswarm(
                 plt.savefig(p, dpi=400, bbox_inches="tight")
                 if p.suffix.lower() == ".pdf":
                     plt.savefig(p.with_suffix(".png"), dpi=300, bbox_inches="tight")
+                elif p.suffix.lower() == ".png":
+                    plt.savefig(p.with_suffix(".pdf"), dpi=400, bbox_inches="tight")
         except Exception:
             pass
     finally:
-        plt.close()
+        if not show_plot:
+            plt.close("all")
+        else:
+            plt.close()

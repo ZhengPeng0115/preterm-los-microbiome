@@ -129,14 +129,17 @@ def run_case_control_study(
     Experiment (a): Case-control (1:3) cross-validation study.
     Evaluates clinical and microbiome modalities (+ multimodal combination).
     Selects the 'Best Source' for each pathogen and overall LOS based on pooled CV AUC.
-    Computes pooled held-out metrics with 100-run bootstrap 95% CIs and SHAP beeswarm plots.
+    Computes pooled held-out metrics with 100-run bootstrap 95% CIs and generates
+    SHAP beeswarm summary plots for all evaluated modalities (not only the best source)
+    for both the overall model and each pathogen model.
 
     Returns:
     --------
     best_sources : Dict[str, str]
         Mapping from pathogen/overall to the best-performing data source name.
     study_results : Dict[str, Dict]
-        Detailed metrics, CIs, and pooled predictions for each target and modality.
+        Detailed metrics, CIs, pooled predictions, and SHAP explanations/plot paths
+        for each target and modality.
     """
     cfg = config or PipelineConfig()
     if pathogens is None:
@@ -334,31 +337,41 @@ def run_case_control_study(
         study_results[target] = target_results
         print(f" -> Best source for {target_display}: {best_sources[target]} (AUC: {best_auc:.3f})")
 
-        # Generate and save SHAP Beeswarm summary plot for best source
-        chosen_src = best_sources[target]
-        if cfg.plot_shap_beeswarm and chosen_src in modality_shap and len(modality_shap[chosen_src]["vals"]) > 0:
-            try:
-                aligned_exp = build_union_and_align_shap(
-                    shap_values_list=modality_shap[chosen_src]["vals"],
-                    shap_base_list=modality_shap[chosen_src]["base"],
-                    shap_data_list=modality_shap[chosen_src]["data"],
-                    shap_featnames_list=modality_shap[chosen_src]["feats"],
-                )
-                target_results[chosen_src]["shap_explanation"] = aligned_exp
+        # Generate and save SHAP Beeswarm summary plots for all evaluated modalities
+        if cfg.plot_shap_beeswarm:
+            chosen_src = best_sources[target]
+            target_slug = "overall" if target == "overall" else target.strip()
+            for src_name, shap_bundle in modality_shap.items():
+                if src_name not in target_results or len(shap_bundle["vals"]) == 0:
+                    continue
+                try:
+                    aligned_exp = build_union_and_align_shap(
+                        shap_values_list=shap_bundle["vals"],
+                        shap_base_list=shap_bundle["base"],
+                        shap_data_list=shap_bundle["data"],
+                        shap_featnames_list=shap_bundle["feats"],
+                    )
+                    target_results[src_name]["shap_explanation"] = aligned_exp
 
-                target_slug = "overall" if target == "overall" else target.strip()
-                save_path = f"{cfg.figures_dir}/exp_a_{target_slug}_shap_beeswarm.pdf"
-                title = f"SHAP Feature Importance (Beeswarm) - {target_display}\nExperiment (a) Case-Control [Source: {chosen_src}]"
-                plot_shap_beeswarm(
-                    explanation=aligned_exp,
-                    title=title,
-                    save_path=save_path,
-                    max_display=cfg.shap_beeswarm_max_display,
-                )
-                target_results[chosen_src]["shap_plot_path"] = save_path
-                print(f" -> Saved SHAP beeswarm plot: {save_path}")
-            except Exception as e:
-                print(f" -> [Warning] Could not generate SHAP beeswarm for {target_display}: {e}")
+                    save_path = f"{cfg.figures_dir}/exp_a_{target_slug}_{src_name}_shap_beeswarm.pdf"
+                    best_tag = " [Best Source]" if src_name == chosen_src else ""
+                    title = (
+                        f"SHAP Feature Importance (Beeswarm) - {target_display}\n"
+                        f"Experiment (a) Case-Control [Source: {src_name}]{best_tag}"
+                    )
+                    plot_shap_beeswarm(
+                        explanation=aligned_exp,
+                        title=title,
+                        save_path=save_path,
+                        max_display=cfg.shap_beeswarm_max_display,
+                    )
+                    target_results[src_name]["shap_plot_path"] = save_path
+                    print(f" -> Saved SHAP beeswarm plot ({src_name}): {save_path}")
+                except Exception as e:
+                    print(
+                        f" -> [Warning] Could not generate SHAP beeswarm for "
+                        f"{target_display} ({src_name}): {e}"
+                    )
 
     return best_sources, study_results
 

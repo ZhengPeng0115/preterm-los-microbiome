@@ -67,8 +67,9 @@ The framework implements three unified experimental protocols:
 ```
 
 ### (a) Case-Control Study (1:3 Matched Cohort)
-* Evaluates each single data source and a multimodal combination across 5-fold cross-validation.
+* Evaluates each single data source (`clinical`, `microbiome_peak`, `microbiome_species`, `microbiome_genus`, `microbiome_phylum`) and a multimodal combination (`multimodal_comb`) across 5-fold cross-validation.
 * Dynamically identifies the **Best Source** for each pathogen target and for overall sepsis (LOS) based on held-out test AUC.
+* Generates pooled out-of-fold **SHAP beeswarm summary plots** for **every evaluated data source** (not only the Best Source) for both the overall sepsis model and each pathogen-specific model.
 
 ### (b) Full Cohort Test (All Controls)
 * Trains on target pathogen cases vs. matched controls (1:3) and evaluates across all cohort controls (excluding other sepsis cases).
@@ -91,16 +92,16 @@ The framework implements three unified experimental protocols:
 All output tables and figures are automatically written to `figures/`:
 
 ### A. Metrics CSV Table
-* **`figures/pooled_metrics_detailed_table.csv`**: Comprehensive results reporting Best Source, optimal threshold, and 95% CIs (`point [lower - upper]`) for:
-  - Overall Sepsis (LOS) in Experiment (a)
-  - Each specific pathogen across Experiments (a), (b), and (c)
+* **`figures/pooled_metrics_detailed_table.csv`**: Comprehensive results reporting Data Source, Best Source indicator (`Yes`/`No`), optimal threshold, and 95% CIs (`point [lower - upper]`) for AUC, Sensitivity, Specificity, PPV, NPV, and Balanced Accuracy across:
+  - Overall Sepsis (LOS) in Experiment (a) across **all evaluated modalities** (`clinical`, `microbiome_peak`, `microbiome_species`, `microbiome_genus`, `microbiome_phylum`, `multimodal_comb`)
+  - Each specific pathogen across **all evaluated modalities** in Experiment (a) and using each pathogen's Best Source in Experiments (b) and (c)
 
 ### B. Visualization Figures (Exported as vector `.pdf` and companion `.png`)
 * **SHAP Beeswarm Summary Plots**:
-  - `exp_a_overall_shap_beeswarm.pdf` / `.png`: Feature impact and directionality for overall sepsis.
-  - `exp_a_<pathogen>_shap_beeswarm.pdf` / `.png`: Case-control feature importance for each pathogen.
-  - `exp_b_<pathogen>_shap_beeswarm.pdf` / `.png`: Full cohort (all controls) feature importance.
-  - `exp_c_<pathogen>_shap_beeswarm.pdf` / `.png`: Full cohort (controls + other sepsis) feature importance.
+  - `exp_a_overall_<source>_shap_beeswarm.pdf` / `.png`: Case-control feature impact and directionality for overall sepsis across **all evaluated modalities** (`clinical`, `microbiome_peak`, `microbiome_species`, `microbiome_genus`, `microbiome_phylum`, `multimodal_comb`), with the Best Source labeled in the plot title.
+  - `exp_a_<pathogen>_<source>_shap_beeswarm.pdf` / `.png`: Case-control feature importance for each pathogen across **all evaluated modalities** (not only the Best Source), with the Best Source labeled in the plot title.
+  - `exp_b_<pathogen>_shap_beeswarm.pdf` / `.png`: Full cohort (all controls) feature importance using each pathogen's Best Source.
+  - `exp_c_<pathogen>_shap_beeswarm.pdf` / `.png`: Full cohort (controls + other sepsis) feature importance using each pathogen's Best Source.
 * **Performance Curves**: `exp_{b,c}_<pathogen>_performance_curves.pdf` (Sensitivity, Specificity, PPV, NPV vs threshold).
 * **ROC Curves**: `exp_{b,c}_<pathogen>_roc_curve.pdf` (ROC curves with bootstrap 95% CI AUC in legend).
 * **Probability Distributions**: `exp_{b,c}_<pathogen>_prob_distribution.pdf` (Violin plots with individual jitter and quartile markers).

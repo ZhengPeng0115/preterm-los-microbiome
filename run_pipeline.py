@@ -5,7 +5,8 @@ Executes and compares:
   (b) Full cohort test on all controls
   (c) Full cohort test on all controls + other sepsis
 All evaluations report pooled held-out metrics with 100-run bootstrap 95% CIs
-and generate SHAP beeswarm summary plots for overall sepsis and pathogen models.
+and generate SHAP beeswarm summary plots across all evaluated modalities in
+Experiment (a) and for best-source pathogen models in Experiments (b) and (c).
 """
 
 import argparse
@@ -37,6 +38,105 @@ def format_metric_ci(ci_info: dict) -> str:
     lower = ci_info.get("ci_lower", float("nan"))
     upper = ci_info.get("ci_upper", float("nan"))
     return f"{point:.3f} [{lower:.3f} - {upper:.3f}]"
+
+
+def build_pooled_metrics_table(
+    exp_a_results: dict,
+    exp_b_results: dict,
+    exp_c_results: dict,
+    best_sources: dict,
+    pathogens: list,
+) -> pd.DataFrame:
+    """
+    Build the comprehensive pooled metrics table with 95% CIs across:
+      - Experiment (a): ALL evaluated data sources (not only the best source) for both
+        Overall Sepsis (LOS) and every pathogen-specific model.
+      - Experiments (b) and (c): Each pathogen-specific model using its Best Source from (a).
+    """
+    detailed_rows = []
+
+    def _make_row(target_label: str, exp_label: str, src_name: str, is_best: bool, threshold: float, ci_dict: dict) -> dict:
+        return {
+            "Target": target_label,
+            "Experiment": exp_label,
+            "Data Source": src_name,
+            "Best Source": "Yes" if is_best else "No",
+            "Threshold": f"{threshold:.3f}",
+            "AUC (95% CI)": format_metric_ci(ci_dict.get("auc", {})),
+            "Sensitivity (95% CI)": format_metric_ci(ci_dict.get("sensitivity", {})),
+            "Specificity (95% CI)": format_metric_ci(ci_dict.get("specificity", {})),
+            "PPV (95% CI)": format_metric_ci(ci_dict.get("ppv", {})),
+            "NPV (95% CI)": format_metric_ci(ci_dict.get("npv", {})),
+            "Balanced Accuracy (95% CI)": format_metric_ci(ci_dict.get("balanced_accuracy", {})),
+        }
+
+    # (i) Overall Sepsis Case-Control Results across ALL evaluated modalities
+    if exp_a_results and "overall" in exp_a_results:
+        best_overall_src = best_sources.get("overall", "clinical")
+        for src_name, ov_res in exp_a_results["overall"].items():
+            ov_ci = ov_res.get("metrics_ci", {})
+            detailed_rows.append(
+                _make_row(
+                    target_label="Overall Sepsis (LOS)",
+                    exp_label="(a) Case-Control (1:3)",
+                    src_name=src_name,
+                    is_best=(src_name == best_overall_src),
+                    threshold=ov_res.get("threshold", 0.5),
+                    ci_dict=ov_ci,
+                )
+            )
+
+    # (ii) Specific Pathogens across Experiments (a) [all modalities], (b), and (c)
+    for p in pathogens:
+        p_clean = p.strip()
+        best_src = best_sources.get(p, "clinical")
+
+        # Experiment (a): all evaluated modalities
+        if exp_a_results and p in exp_a_results:
+            for src_name, a_res in exp_a_results[p].items():
+                a_ci = a_res.get("metrics_ci", {})
+                detailed_rows.append(
+                    _make_row(
+                        target_label=p_clean,
+                        exp_label="(a) Case-Control (1:3)",
+                        src_name=src_name,
+                        is_best=(src_name == best_src),
+                        threshold=a_res.get("threshold", 0.5),
+                        ci_dict=a_ci,
+                    )
+                )
+
+        # Experiment (b): Full Cohort (All Controls)
+        if exp_b_results and p in exp_b_results:
+            b_res = exp_b_results[p]
+            b_ci = b_res.get("metrics_ci", {})
+            detailed_rows.append(
+                _make_row(
+                    target_label=p_clean,
+                    exp_label="(b) Full Cohort (All Controls)",
+                    src_name=b_res.get("source_used", best_src),
+                    is_best=True,
+                    threshold=b_res.get("best_threshold", 0.5),
+                    ci_dict=b_ci,
+                )
+            )
+
+        # Experiment (c): Full Cohort (All Controls + Other Sepsis)
+        if exp_c_results and p in exp_c_results:
+            c_res = exp_c_results[p]
+            c_ci = c_res.get("metrics_ci", {})
+            detailed_rows.append(
+                _make_row(
+                    target_label=p_clean,
+                    exp_label="(c) Full Cohort (All Controls + Other Sepsis)",
+                    src_name=c_res.get("source_used", best_src),
+                    is_best=True,
+                    threshold=c_res.get("best_threshold", 0.5),
+                    ci_dict=c_ci,
+                )
+            )
+
+    return pd.DataFrame(detailed_rows)
 
 
 def main():
@@ -166,83 +266,17 @@ def main():
     print("POOLED METRICS TABLE WITH 95% CONFIDENCE INTERVALS (100 Bootstrap Runs)")
     print("=" * 120)
 
-    detailed_rows = []
-
-    # (i) Overall Sepsis Case-Control Results
-    if exp_a_results and "overall" in exp_a_results:
-        best_overall_src = best_sources.get("overall", "clinical")
-        ov_res = exp_a_results["overall"].get(best_overall_src, {})
-        ov_ci = ov_res.get("metrics_ci", {})
-        detailed_rows.append({
-            "Target": "Overall Sepsis (LOS)",
-            "Experiment": "(a) Case-Control (1:3)",
-            "Data Source": best_overall_src,
-            "Threshold": f"{ov_res.get('threshold', 0.5):.3f}",
-            "AUC (95% CI)": format_metric_ci(ov_ci.get("auc", {})),
-            "Sensitivity (95% CI)": format_metric_ci(ov_ci.get("sensitivity", {})),
-            "Specificity (95% CI)": format_metric_ci(ov_ci.get("specificity", {})),
-            "PPV (95% CI)": format_metric_ci(ov_ci.get("ppv", {})),
-            "NPV (95% CI)": format_metric_ci(ov_ci.get("npv", {})),
-        })
-
-    # (ii) Specific Pathogens across Experiments (a), (b), (c)
-    for p in pathogens:
-        p_clean = p.strip()
-        best_src = best_sources.get(p, "clinical")
-
-        # Experiment (a)
-        if exp_a_results and p in exp_a_results:
-            a_res = exp_a_results[p].get(best_src, {})
-            a_ci = a_res.get("metrics_ci", {})
-            detailed_rows.append({
-                "Target": p_clean,
-                "Experiment": "(a) Case-Control (1:3)",
-                "Data Source": best_src,
-                "Threshold": f"{a_res.get('threshold', 0.5):.3f}",
-                "AUC (95% CI)": format_metric_ci(a_ci.get("auc", {})),
-                "Sensitivity (95% CI)": format_metric_ci(a_ci.get("sensitivity", {})),
-                "Specificity (95% CI)": format_metric_ci(a_ci.get("specificity", {})),
-                "PPV (95% CI)": format_metric_ci(a_ci.get("ppv", {})),
-                "NPV (95% CI)": format_metric_ci(a_ci.get("npv", {})),
-            })
-
-        # Experiment (b)
-        if exp_b_results and p in exp_b_results:
-            b_res = exp_b_results[p]
-            b_ci = b_res.get("metrics_ci", {})
-            detailed_rows.append({
-                "Target": p_clean,
-                "Experiment": "(b) Full Cohort (All Controls)",
-                "Data Source": best_src,
-                "Threshold": f"{b_res.get('best_threshold', 0.5):.3f}",
-                "AUC (95% CI)": format_metric_ci(b_ci.get("auc", {})),
-                "Sensitivity (95% CI)": format_metric_ci(b_ci.get("sensitivity", {})),
-                "Specificity (95% CI)": format_metric_ci(b_ci.get("specificity", {})),
-                "PPV (95% CI)": format_metric_ci(b_ci.get("ppv", {})),
-                "NPV (95% CI)": format_metric_ci(b_ci.get("npv", {})),
-            })
-
-        # Experiment (c)
-        if exp_c_results and p in exp_c_results:
-            c_res = exp_c_results[p]
-            c_ci = c_res.get("metrics_ci", {})
-            detailed_rows.append({
-                "Target": p_clean,
-                "Experiment": "(c) Full Cohort (All Controls + Other Sepsis)",
-                "Data Source": best_src,
-                "Threshold": f"{c_res.get('best_threshold', 0.5):.3f}",
-                "AUC (95% CI)": format_metric_ci(c_ci.get("auc", {})),
-                "Sensitivity (95% CI)": format_metric_ci(c_ci.get("sensitivity", {})),
-                "Specificity (95% CI)": format_metric_ci(c_ci.get("specificity", {})),
-                "PPV (95% CI)": format_metric_ci(c_ci.get("ppv", {})),
-                "NPV (95% CI)": format_metric_ci(c_ci.get("npv", {})),
-            })
-
-    detailed_df = pd.DataFrame(detailed_rows)
+    detailed_df = build_pooled_metrics_table(
+        exp_a_results=exp_a_results,
+        exp_b_results=exp_b_results,
+        exp_c_results=exp_c_results,
+        best_sources=best_sources,
+        pathogens=pathogens,
+    )
     print(detailed_df.to_string(index=False))
 
     # Save detailed metrics table to figures directory
-    detailed_table_path = Path("figures") / "pooled_metrics_detailed_table.csv"
+    detailed_table_path = Path(cfg.figures_dir) / "pooled_metrics_detailed_table.csv"
     detailed_table_path.parent.mkdir(parents=True, exist_ok=True)
     detailed_df.to_csv(detailed_table_path, index=False)
     print(f"\nSaved detailed metrics table to: {detailed_table_path}")
@@ -252,12 +286,12 @@ def main():
         print("SHAP BEESWARM SUMMARY PLOTS")
         print("=" * 80)
         print("Feature importance beeswarm plots saved with companion PNG and PDF copies in 'figures/':")
-        if "a" in selected_exps:
-            print("  - Exp (a) Case-Control: figures/exp_a_<target>_shap_beeswarm.pdf (.png)")
+        if exp_a_results:
+            print("  - Exp (a) Case-Control: figures/exp_a_<target>_<source>_shap_beeswarm.pdf (.png) [all modalities]")
         if "b" in selected_exps:
-            print("  - Exp (b) Full Cohort:  figures/exp_b_<pathogen>_shap_beeswarm.pdf (.png)")
+            print("  - Exp (b) Full Cohort:  figures/exp_b_<pathogen>_shap_beeswarm.pdf (.png) [best source]")
         if "c" in selected_exps:
-            print("  - Exp (c) Full Cohort:  figures/exp_c_<pathogen>_shap_beeswarm.pdf (.png)")
+            print("  - Exp (c) Full Cohort:  figures/exp_c_<pathogen>_shap_beeswarm.pdf (.png) [best source]")
 
 
 if __name__ == "__main__":

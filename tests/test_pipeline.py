@@ -27,6 +27,7 @@ from sepsis_prediction.modeling import (
 )
 from sepsis_prediction.experiments import (
     get_target_aware_outer_cv,
+    run_case_control_study,
 )
 from sepsis_prediction.evaluation import (
     compute_binary_metrics,
@@ -391,3 +392,150 @@ def test_alignment_retains_groups_without_orphaned_removal():
     assert len(df_clin_aligned) == 4
     assert len(df_micro_aligned) == 4
     assert 2 in df_clin_aligned["Match_group"].values
+
+
+def test_case_control_shap_beeswarm_all_modalities(tmp_path):
+    """Verify Experiment (a) generates SHAP beeswarm plots for ALL modalities (not just Best Source)."""
+    rng = np.random.RandomState(42)
+    # 8 matched groups (1 case + 3 controls each = 32 infants): 4 PathogenA, 4 PathogenB
+    n_groups = 8
+    rows_clin = []
+    rows_sp = []
+    rows_ph = []
+    pt_counter = 1
+    for g in range(1, n_groups + 1):
+        pathogen_name = "PathogenA" if g <= 4 else "PathogenB"
+        for member in range(4):
+            is_case = 1 if member == 0 else 0
+            p_label = pathogen_name if is_case else 0
+            rows_clin.append({
+                "Pt_ID": pt_counter,
+                "Match_group": g,
+                "LOS": is_case,
+                "pathogen": p_label,
+                "Hospital_site": (g % 2) + 1,
+                "Biological_sex": member % 2,
+                "GA_total": 28.0 + rng.randn() + (1.5 if is_case else 0.0),
+                "Birthweight": 1100.0 + 100.0 * rng.randn(),
+            })
+            rows_sp.append({
+                "Pt_ID": pt_counter,
+                "Match_group": g,
+                "LOS": is_case,
+                "pathogen": p_label,
+                "TaxonA_mean": rng.randn() + (1.2 if p_label == "PathogenA" else 0.0),
+                "TaxonB_mean": rng.randn() + (1.2 if p_label == "PathogenB" else 0.0),
+                "Shannon_mean": rng.randn(),
+            })
+            rows_ph.append({
+                "Pt_ID": pt_counter,
+                "Match_group": g,
+                "LOS": is_case,
+                "pathogen": p_label,
+                "Phylum1_mean": rng.randn() + (0.8 if is_case else 0.0),
+                "Phylum2_mean": rng.randn(),
+            })
+            pt_counter += 1
+
+    sources_data = {
+        "clinical": pd.DataFrame(rows_clin),
+        "microbiome_species": pd.DataFrame(rows_sp),
+        "microbiome_phylum": pd.DataFrame(rows_ph),
+    }
+
+    cfg = PipelineConfig(
+        figures_dir=str(tmp_path),
+        nominal_features=["Hospital_site", "Biological_sex"],
+        one_hot_features=["Hospital_site"],
+        one_hot_categories={"Hospital_site": [1, 2]},
+        n_splits_outer=2,
+        n_splits_inner=2,
+        bayes_iter=2,
+        shap_k=5,
+        shap_bootstrap_runs=2,
+        n_bootstrap_ci=5,
+        plot_shap_beeswarm=True,
+        shap_beeswarm_max_display=5,
+        random_seed=42,
+    )
+
+    best_sources, study_results = run_case_control_study(
+        sources_data=sources_data,
+        pathogens=["PathogenA"],
+        config=cfg,
+        run_overall=True,
+    )
+
+    expected_modalities = ["clinical", "microbiome_species", "microbiome_phylum", "multimodal_comb"]
+    for target in ["overall", "PathogenA"]:
+        assert target in best_sources
+        assert target in study_results
+        for mod in expected_modalities:
+            assert mod in study_results[target]
+            assert "shap_explanation" in study_results[target][mod]
+            assert "shap_plot_path" in study_results[target][mod]
+            pdf_file = tmp_path / f"exp_a_{target}_{mod}_shap_beeswarm.pdf"
+            png_file = tmp_path / f"exp_a_{target}_{mod}_shap_beeswarm.png"
+            assert pdf_file.exists(), f"Missing PDF for {target}/{mod}"
+            assert png_file.exists(), f"Missing PNG for {target}/{mod}"
+
+
+def test_build_pooled_metrics_table_all_exp_a_modalities():
+    """Verify pooled_metrics_detailed_table includes ALL Experiment (a) modalities for overall and every pathogen."""
+    from run_pipeline import build_pooled_metrics_table
+
+    dummy_ci = {
+        metric: {"point": 0.80, "ci_lower": 0.70, "ci_upper": 0.90}
+        for metric in ["auc", "sensitivity", "specificity", "ppv", "npv", "balanced_accuracy"]
+    }
+    sources = ["clinical", "microbiome_species", "multimodal_comb"]
+    exp_a_results = {
+        "overall": {s: {"threshold": 0.45, "metrics_ci": dummy_ci} for s in sources},
+        "PathogenA": {s: {"threshold": 0.50, "metrics_ci": dummy_ci} for s in sources},
+        "PathogenB": {s: {"threshold": 0.55, "metrics_ci": dummy_ci} for s in sources},
+    }
+    best_sources = {
+        "overall": "multimodal_comb",
+        "PathogenA": "microbiome_species",
+        "PathogenB": "clinical",
+    }
+    exp_b_results = {
+        "PathogenA": {"source_used": "microbiome_species", "best_threshold": 0.52, "metrics_ci": dummy_ci},
+        "PathogenB": {"source_used": "clinical", "best_threshold": 0.54, "metrics_ci": dummy_ci},
+    }
+    exp_c_results = {
+        "PathogenA": {"source_used": "microbiome_species", "best_threshold": 0.53, "metrics_ci": dummy_ci},
+        "PathogenB": {"source_used": "clinical", "best_threshold": 0.56, "metrics_ci": dummy_ci},
+    }
+
+    df = build_pooled_metrics_table(
+        exp_a_results=exp_a_results,
+        exp_b_results=exp_b_results,
+        exp_c_results=exp_c_results,
+        best_sources=best_sources,
+        pathogens=["PathogenA", "PathogenB"],
+    )
+
+    # 3 targets * 3 modalities in Exp (a) = 9 rows, plus 2 in Exp (b) and 2 in Exp (c) = 13 rows total
+    assert len(df) == 13
+    expected_cols = [
+        "Target", "Experiment", "Data Source", "Best Source", "Threshold",
+        "AUC (95% CI)", "Sensitivity (95% CI)", "Specificity (95% CI)",
+        "PPV (95% CI)", "NPV (95% CI)", "Balanced Accuracy (95% CI)",
+    ]
+    assert list(df.columns) == expected_cols
+
+    # Verify all 3 modalities present for Overall Sepsis (LOS) and each pathogen in Exp (a)
+    for target_label, expected_best in [
+        ("Overall Sepsis (LOS)", "multimodal_comb"),
+        ("PathogenA", "microbiome_species"),
+        ("PathogenB", "clinical"),
+    ]:
+        sub = df[(df["Target"] == target_label) & (df["Experiment"] == "(a) Case-Control (1:3)")]
+        assert set(sub["Data Source"]) == set(sources)
+        best_rows = sub[sub["Best Source"] == "Yes"]
+        assert len(best_rows) == 1
+        assert best_rows.iloc[0]["Data Source"] == expected_best
+        assert len(sub[sub["Best Source"] == "No"]) == 2
+
+

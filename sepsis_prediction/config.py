@@ -89,10 +89,10 @@ class PipelineConfig:
     ])
 
     # Cross-validation & sampling settings
-    random_seed: int = 33
+    random_seed: int = 0
     n_splits_outer: int = 5
     n_splits_inner: int = 3
-    bayes_iter: int = 30
+    bayes_iter: int = 20
 
     # Feature selection
     shap_k: int = 30
